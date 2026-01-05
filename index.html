@@ -1,511 +1,587 @@
-import React, { useState, useMemo } from 'react';
-import { 
-  BarChart, 
-  Bar, 
-  XAxis, 
-  YAxis, 
-  CartesianGrid, 
-  Tooltip, 
-  Legend, 
-  ResponsiveContainer,
-  PieChart,
-  Pie,
-  Cell
-} from 'recharts';
-import { 
-  Sun, 
-  Moon, 
-  Zap, 
-  Droplets, 
-  TrendingUp, 
-  Users, 
-  DollarSign, 
-  Activity,
-  Check
-} from 'lucide-react';
-
-// --- Mock Data Generator ---
-// Helper to generate realistic-looking data from 2013 to 2025
-const generateData = () => {
-  const years = Array.from({ length: 13 }, (_, i) => 2013 + i);
-  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-  
-  const data = {};
-
-  years.forEach(year => {
-    // Random learner count between 800 and 1200, growing slightly each year
-    const learnerCount = Math.floor(800 + (year - 2013) * 30 + Math.random() * 50);
-
-    const yearlyData = months.map(month => {
-      // Seasonal factors (Winter peak for electricity, Summer peak for water)
-      const isWinter = ['Jun', 'Jul', 'Aug'].includes(month);
-      const isSummer = ['Dec', 'Jan', 'Feb'].includes(month);
-      
-      // Electricity Data (Rand & kWh)
-      const kwhBase = 15000 + (year - 2013) * 500; // Consumption grows over years
-      const kwh = Math.floor(kwhBase * (isWinter ? 1.4 : 1.0) + Math.random() * 2000);
-      
-      const energyCharge = kwh * (1.5 + (year - 2013) * 0.15); // Rate increases yearly
-      const serviceCharge = 2000 + (year - 2013) * 100;
-      const networkCharge = 1500 + (year - 2013) * 80;
-      const networkSurcharge = networkCharge * 0.1;
-      const sundryCharges = Math.random() > 0.8 ? 500 : 0; // Occasional
-      const miscCharges = Math.random() > 0.9 ? 200 : 0;
-      const subTotalElec = energyCharge + serviceCharge + networkCharge + networkSurcharge + sundryCharges + miscCharges;
-      const vatElec = subTotalElec * 0.15;
-
-      // Water Data (Rand & KL)
-      const klBase = 1200 + (year - 2013) * 50;
-      const kl = Math.floor(klBase * (isSummer ? 1.3 : 1.0) + Math.random() * 200);
-
-      const waterCharge = kl * (15 + (year - 2013) * 2); // Rate increases
-      const sewageCharge = kl * 0.7 * (10 + (year - 2013) * 1.5);
-      const dsml = 500 + (year - 2013) * 50; // Daily Service Charge?
-      const sundryWater = Math.random() > 0.9 ? 300 : 0;
-      const miscWater = Math.random() > 0.95 ? 150 : 0;
-      const subTotalWater = waterCharge + sewageCharge + dsml + sundryWater + miscWater;
-      const vatWater = subTotalWater * 0.15;
-
-      return {
-        month,
-        learnerCount,
-        electricity: {
-          usage: kwh,
-          breakdown: {
-            'Energy Charge': energyCharge,
-            'Service Charge': serviceCharge,
-            'Network Charge': networkCharge,
-            'Network Surcharge': networkSurcharge,
-            'Sundry Charges': sundryCharges,
-            'Miscellaneous Charges': miscCharges,
-            'VAT': vatElec,
-            'Total Cost': subTotalElec + vatElec
-          }
-        },
-        water: {
-          usage: kl,
-          breakdown: {
-            'Water Charge': waterCharge,
-            'Sewage Charges': sewageCharge,
-            'DSML': dsml,
-            'Sundry Charges': sundryWater,
-            'Miscellaneous Charges': miscWater,
-            'VAT': vatWater,
-            'Total Cost': subTotalWater + vatWater
-          }
-        }
-      };
-    });
-
-    data[year] = yearlyData;
-  });
-
-  return { years, data };
-};
-
-const { years: YEARS, data: MOCK_DATA } = generateData();
-
-// --- Components ---
-
-const KPICard = ({ title, value, subtext, icon: Icon, colorClass, isDark }) => (
-  <div className={`p-4 rounded-xl shadow-sm border transition-colors duration-300
-    ${isDark ? 'bg-gray-800 border-gray-700 text-white' : 'bg-white border-gray-200 text-gray-800'}`}>
-    <div className="flex justify-between items-start mb-2">
-      <div className={`p-2 rounded-lg ${colorClass} bg-opacity-10`}>
-        <Icon className={`w-5 h-5 ${colorClass.replace('bg-', 'text-')}`} />
-      </div>
-      <span className={`text-xs font-medium px-2 py-1 rounded-full 
-        ${isDark ? 'bg-gray-700 text-gray-300' : 'bg-gray-100 text-gray-600'}`}>
-        Annual
-      </span>
-    </div>
-    <h3 className={`text-sm font-medium ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>{title}</h3>
-    <p className="text-2xl font-bold mt-1">{value}</p>
-    <p className={`text-xs mt-1 ${isDark ? 'text-gray-500' : 'text-gray-400'}`}>{subtext}</p>
-  </div>
-);
-
-const PIE_COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#6366f1', '#64748b'];
-
-const CostBreakdownPie = ({ data, utilityType, isDark }) => {
-  const breakdownData = useMemo(() => {
-    // 1. Identify keys to exclude from the pie chart (Totals)
-    const excludeKeys = ['Total Cost'];
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Municipal Charges Dashboard</title>
     
-    // 2. Aggregate totals for the year
-    const totals = {};
-    data.forEach(month => {
-      const breakdown = month[utilityType].breakdown;
-      Object.keys(breakdown).forEach(key => {
-        if (!excludeKeys.includes(key)) {
-          totals[key] = (totals[key] || 0) + breakdown[key];
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- React & ReactDOM (Order matters) -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    
+    <!-- Prop Types (Required by some Recharts versions) -->
+    <script src="https://unpkg.com/prop-types/prop-types.min.js"></script>
+
+    <!-- Recharts (Using CDNJS for better reliability) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/recharts/2.12.7/Recharts.min.js"></script>
+    
+    <!-- Babel -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+    <style>
+        /* Custom scrollbar hiding for the year selector */
+        .scrollbar-hide::-webkit-scrollbar {
+            display: none;
         }
-      });
-    });
+        .scrollbar-hide {
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+        }
+        /* Gradient mask for year selector */
+        .mask-image-gradient {
+            mask-image: linear-gradient(to right, transparent, black 10%, black 90%, transparent);
+            -webkit-mask-image: linear-gradient(to right, transparent, black 10%, black 90%, transparent);
+        }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
 
-    // 3. Convert to array and sort by value
-    return Object.entries(totals)
-      .map(([name, value]) => ({ name, value }))
-      .filter(item => item.value > 0)
-      .sort((a, b) => b.value - a.value);
-  }, [data, utilityType]);
+    <script type="text/babel">
+        // Ensure globals are available
+        const { useState, useMemo } = React;
+        const { 
+            BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell 
+        } = window.Recharts; // Access from window explicitly
 
-  return (
-    <div className="flex flex-col items-center justify-center h-full w-full">
-      <div className="h-48 w-full"> {/* Reduced height to h-48 for better balance */}
-        <ResponsiveContainer width="100%" height="100%">
-          <PieChart>
-            <Pie
-              data={breakdownData}
-              cx="50%"
-              cy="50%"
-              innerRadius={45}
-              outerRadius={65}
-              paddingAngle={5}
-              dataKey="value"
+        // --- Icons (Inline SVGs) ---
+        const Icon = ({ children, className }) => (
+            <svg 
+                xmlns="http://www.w3.org/2000/svg" 
+                width="24" 
+                height="24" 
+                viewBox="0 0 24 24" 
+                fill="none" 
+                stroke="currentColor" 
+                strokeWidth="2" 
+                strokeLinecap="round" 
+                strokeLinejoin="round" 
+                className={className}
             >
-              {breakdownData.map((entry, index) => (
-                <Cell key={`cell-${index}`} fill={PIE_COLORS[index % PIE_COLORS.length]} stroke={isDark ? '#1f2937' : '#fff'} />
-              ))}
-            </Pie>
-            <Tooltip 
-              formatter={(value) => `R ${value.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`}
-              contentStyle={{ 
-                backgroundColor: isDark ? '#1f2937' : '#fff', 
-                borderColor: isDark ? '#374151' : '#e5e7eb',
-                color: isDark ? '#fff' : '#000',
-                borderRadius: '8px'
-              }}
-            />
-          </PieChart>
-        </ResponsiveContainer>
-      </div>
-      {/* Compact 2-column grid for the legend */}
-      <div className="w-full grid grid-cols-2 gap-x-2 gap-y-2 mt-1">
-        {breakdownData.map((entry, index) => (
-          <div key={index} className="flex items-center text-xs" title={entry.name}>
-            <div 
-              className="w-2.5 h-2.5 rounded-full mr-2 shrink-0" 
-              style={{ backgroundColor: PIE_COLORS[index % PIE_COLORS.length] }}
-            />
-            <span className={`truncate ${isDark ? 'text-gray-300' : 'text-gray-600'}`}>
-              {entry.name}
-            </span>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-};
+                {children}
+            </svg>
+        );
 
-export default function MunicipalChargesApp() {
-  const [activeTab, setActiveTab] = useState('electricity'); // 'electricity' | 'water'
-  const [selectedYear, setSelectedYear] = useState(2025);
-  // Replaced independent booleans with a single 'mode' state
-  const [chartMetric, setChartMetric] = useState('usage'); // 'usage' | 'cost'
-  const [isDarkMode, setIsDarkMode] = useState(false);
+        const Activity = ({ className }) => (
+            <Icon className={className}>
+                <path d="M22 12h-4l-3 9L9 3l-3 9H2"/>
+            </Icon>
+        );
 
-  const currentData = MOCK_DATA[selectedYear] || [];
-  
-  // Calculations for KPIs
-  const stats = useMemo(() => {
-    let totalCost = 0;
-    let totalUsage = 0;
-    let learnerCountAvg = 0;
+        const Sun = ({ className }) => (
+            <Icon className={className}>
+                <circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/>
+            </Icon>
+        );
 
-    currentData.forEach(m => {
-      totalCost += m[activeTab].breakdown['Total Cost'];
-      totalUsage += m[activeTab].usage;
-      learnerCountAvg += m.learnerCount;
-    });
+        const Moon = ({ className }) => (
+            <Icon className={className}>
+                <path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/>
+            </Icon>
+        );
 
-    learnerCountAvg = learnerCountAvg / 12;
+        const Zap = ({ className }) => (
+            <Icon className={className}>
+                <path d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14H4Z"/>
+            </Icon>
+        );
 
-    const unit = activeTab === 'electricity' ? 'kWh' : 'KL';
-    const effectiveCost = totalUsage > 0 ? (totalCost / totalUsage) : 0;
-    const perLearner = learnerCountAvg > 0 ? (totalUsage / learnerCountAvg) : 0;
+        const Droplets = ({ className }) => (
+            <Icon className={className}>
+                <path d="M7 16.3c2.2 0 4-1.83 4-4.05 0-1.16-.57-2.26-1.71-3.19S7.29 6.75 7 5.3c-.29 1.45-1.14 2.84-2.29 3.76S3 11.1 3 12.25c0 2.22 1.8 4.05 4 4.05z"/><path d="M12.56 6.6A10.97 10.97 0 0 0 14 3.02c.5 2.5 2 4.9 4 6.5s3 3.5 3 5.5a6.98 6.98 0 0 1-11.91 4.97"/>
+            </Icon>
+        );
 
-    return {
-      totalCost,
-      totalUsage,
-      effectiveCost,
-      perLearner,
-      unit,
-      learnerCountAvg
-    };
-  }, [currentData, activeTab]);
+        const DollarSign = ({ className }) => (
+            <Icon className={className}>
+                <line x1="12" x2="12" y1="2" y2="22"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>
+            </Icon>
+        );
 
-  // Chart Data Preparation
-  const chartData = currentData.map(d => ({
-    name: d.month,
-    Usage: d[activeTab].usage,
-    Cost: d[activeTab].breakdown['Total Cost']
-  }));
+        const TrendingUp = ({ className }) => (
+            <Icon className={className}>
+                <polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/>
+            </Icon>
+        );
 
-  const formatCurrency = (val) => `R ${val.toLocaleString()}`;
+        const Users = ({ className }) => (
+            <Icon className={className}>
+                <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+            </Icon>
+        );
 
-  return (
-    <div className={`min-h-screen transition-colors duration-300 font-sans 
-      ${isDarkMode ? 'bg-gray-900 text-gray-100' : 'bg-slate-50 text-slate-900'}`}>
-      
-      {/* --- Top Navigation Bar --- */}
-      <nav className={`px-6 py-4 shadow-sm sticky top-0 z-10 backdrop-blur-md border-b
-        ${isDarkMode ? 'bg-gray-900/90 border-gray-800' : 'bg-white/90 border-gray-200'}`}>
-        <div className="max-w-7xl mx-auto flex justify-between items-center">
-          <div className="flex items-center space-x-3">
-            <div className="p-2 bg-blue-600 rounded-lg shadow-lg shadow-blue-500/30">
-              <Activity className="w-6 h-6 text-white" />
-            </div>
-            <div>
-              <h1 className="text-xl font-bold tracking-tight">Municipal Charges</h1>
-              <p className={`text-xs ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-                Financial Overview & Utility Analytics
-              </p>
-            </div>
-          </div>
-          
-          <button 
-            onClick={() => setIsDarkMode(!isDarkMode)}
-            className={`p-2 rounded-full transition-all duration-300 focus:outline-none focus:ring-2 focus:ring-offset-2
-              ${isDarkMode 
-                ? 'bg-gray-800 text-yellow-400 hover:bg-gray-700 focus:ring-yellow-400' 
-                : 'bg-gray-100 text-slate-600 hover:bg-gray-200 focus:ring-slate-400'}`}
-          >
-            {isDarkMode ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
-          </button>
-        </div>
-      </nav>
+        const Check = ({ className }) => (
+            <Icon className={className}>
+                <path d="M20 6 9 17l-5-5"/>
+            </Icon>
+        );
 
-      <main className="max-w-7xl mx-auto p-6 space-y-6">
-        
-        {/* --- Top Controls Section (Tabs + Years Inline) --- */}
-        <div className={`flex flex-col lg:flex-row items-start lg:items-center`}>
-          
-          {/* Utility Tabs */}
-          <div className={`flex p-1 space-x-1 rounded-lg shrink-0 ${isDarkMode ? 'bg-gray-800' : 'bg-white border border-gray-200'}`}>
-            <button
-              onClick={() => setActiveTab('electricity')}
-              className={`flex items-center px-4 py-2 rounded-md text-sm font-medium transition-all
-                ${activeTab === 'electricity' 
-                  ? 'bg-amber-500 text-white shadow-md' 
-                  : (isDarkMode ? 'text-gray-400 hover:text-gray-200' : 'text-gray-500 hover:text-gray-900')}`}
-            >
-              <Zap className="w-4 h-4 mr-2" /> Electricity
-            </button>
-            <button
-              onClick={() => setActiveTab('water')}
-              className={`flex items-center px-4 py-2 rounded-md text-sm font-medium transition-all
-                ${activeTab === 'water' 
-                  ? 'bg-blue-500 text-white shadow-md' 
-                  : (isDarkMode ? 'text-gray-400 hover:text-gray-200' : 'text-gray-500 hover:text-gray-900')}`}
-            >
-              <Droplets className="w-4 h-4 mr-2" /> Water
-            </button>
-          </div>
-
-          {/* Inline Year Selector - Removed "Year" label and added left margin */}
-          <div className="flex-1 w-full lg:w-auto overflow-hidden relative group ml-0 lg:ml-6 mt-4 lg:mt-0">
-             <div className="absolute left-0 top-0 bottom-0 w-6 bg-gradient-to-r from-current to-transparent opacity-0 pointer-events-none z-10" />
-              <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-hide mask-image-gradient">
-                {/* Removed the Year Label Span */}
-                {YEARS.map(year => (
-                  <button
-                    key={year}
-                    onClick={() => setSelectedYear(year)}
-                    className={`px-3 py-1.5 rounded-md text-xs font-medium whitespace-nowrap transition-all border shrink-0
-                      ${selectedYear === year
-                        ? (isDarkMode 
-                            ? 'bg-indigo-600 border-indigo-500 text-white' 
-                            : 'bg-indigo-600 border-indigo-600 text-white shadow-md')
-                        : (isDarkMode
-                            ? 'bg-gray-800 border-gray-700 text-gray-400 hover:bg-gray-700'
-                            : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50')
-                      }`}
-                  >
-                    {year}
-                  </button>
-                ))}
-              </div>
-             <div className="absolute right-0 top-0 bottom-0 w-6 bg-gradient-to-l from-current to-transparent opacity-0 pointer-events-none z-10" />
-          </div>
-
-        </div>
-
-        {/* --- KPI Cards Grid --- */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-          <KPICard 
-            title="Total Cost" 
-            value={formatCurrency(stats.totalCost)}
-            subtext={`For ${selectedYear}`}
-            icon={DollarSign}
-            colorClass="bg-emerald-500"
-            isDark={isDarkMode}
-          />
-          <KPICard 
-            title="Total Consumption" 
-            value={`${stats.totalUsage.toLocaleString()} ${stats.unit}`}
-            subtext={`For ${selectedYear}`}
-            icon={activeTab === 'electricity' ? Zap : Droplets}
-            colorClass={activeTab === 'electricity' ? 'bg-amber-500' : 'bg-blue-500'}
-            isDark={isDarkMode}
-          />
-          <KPICard 
-            title={`Annual Effective ${stats.unit} Cost`}
-            value={`R ${stats.effectiveCost.toFixed(2)}`}
-            subtext={`Per ${stats.unit}`}
-            icon={TrendingUp}
-            colorClass="bg-purple-500"
-            isDark={isDarkMode}
-          />
-          <KPICard 
-            title={`${stats.unit} Per Learner`} 
-            value={`${stats.perLearner.toFixed(2)} ${stats.unit}`}
-            subtext={`Avg Learners: ${Math.round(stats.learnerCountAvg)}`}
-            icon={Users}
-            colorClass="bg-pink-500"
-            isDark={isDarkMode}
-          />
-        </div>
-
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          
-          {/* --- Main Chart Section (Takes up 2/3 columns) --- */}
-          <div className={`col-span-1 lg:col-span-2 p-6 rounded-xl border shadow-sm ${isDarkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'}`}>
-            <div className="flex flex-wrap items-center justify-between mb-6 gap-4">
-              <div>
-                <h2 className={`text-lg font-bold ${isDarkMode ? 'text-white' : 'text-gray-800'}`}>
-                  Monthly Trends: {selectedYear}
-                </h2>
-                <p className={`text-sm ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-                  Comparison
-                </p>
-              </div>
-
-              {/* Chart Metrics Toggle - Mutually Exclusive */}
-              <div className={`flex items-center space-x-2 p-1 rounded-lg ${isDarkMode ? 'bg-gray-900' : 'bg-gray-100'}`}>
-                {/* Usage Toggle */}
-                <button 
-                  onClick={() => setChartMetric('usage')}
-                  className={`flex items-center space-x-2 px-3 py-1.5 rounded-md text-sm transition-all
-                    ${chartMetric === 'usage' 
-                      ? (activeTab === 'electricity' ? 'bg-amber-500 text-white shadow-sm' : 'bg-blue-500 text-white shadow-sm') 
-                      : (isDarkMode ? 'text-gray-400 hover:bg-gray-800' : 'text-gray-500 hover:bg-gray-200')
-                    }`}
-                >
-                  {activeTab === 'electricity' ? <Zap className="w-4 h-4" /> : <Droplets className="w-4 h-4" />}
-                  <span>{activeTab === 'electricity' ? 'kWh' : 'KL'}</span>
-                  {chartMetric === 'usage' && <Check className="w-3 h-3 ml-1" />}
-                </button>
-
-                {/* Cost Toggle */}
-                <button 
-                  onClick={() => setChartMetric('cost')}
-                  className={`flex items-center space-x-2 px-3 py-1.5 rounded-md text-sm transition-all
-                    ${chartMetric === 'cost' 
-                      ? 'bg-emerald-500 text-white shadow-sm' 
-                      : (isDarkMode ? 'text-gray-400 hover:bg-gray-800' : 'text-gray-500 hover:bg-gray-200')
-                    }`}
-                >
-                  <DollarSign className="w-4 h-4" />
-                  <span>Rand</span>
-                  {chartMetric === 'cost' && <Check className="w-3 h-3 ml-1" />}
-                </button>
-              </div>
-            </div>
+        // --- Mock Data Generator ---
+        const generateData = () => {
+            const years = Array.from({ length: 13 }, (_, i) => 2013 + i);
+            const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
             
-            <div className="h-80 w-full">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={chartData} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke={isDarkMode ? "#374151" : "#e5e7eb"} />
-                  <XAxis 
-                    dataKey="name" 
-                    stroke={isDarkMode ? "#9ca3af" : "#4b5563"} 
-                    tick={{ fill: isDarkMode ? "#9ca3af" : "#4b5563" }}
-                  />
-                  
-                  {/* Render YAxis and Bar based on single selected metric */}
-                  {chartMetric === 'usage' ? (
-                    <>
-                      <YAxis 
-                        orientation="left" 
-                        stroke={activeTab === 'electricity' ? "#f59e0b" : "#3b82f6"}
-                        tick={{ fill: isDarkMode ? "#d1d5db" : "#374151" }}
-                        label={{ 
-                          value: stats.unit, 
-                          angle: -90, 
-                          position: 'insideLeft',
-                          style: { fill: activeTab === 'electricity' ? "#f59e0b" : "#3b82f6" }
+            const data = {};
+
+            years.forEach(year => {
+                const learnerCount = Math.floor(800 + (year - 2013) * 30 + Math.random() * 50);
+
+                const yearlyData = months.map(month => {
+                const isWinter = ['Jun', 'Jul', 'Aug'].includes(month);
+                const isSummer = ['Dec', 'Jan', 'Feb'].includes(month);
+                
+                const kwhBase = 15000 + (year - 2013) * 500; 
+                const kwh = Math.floor(kwhBase * (isWinter ? 1.4 : 1.0) + Math.random() * 2000);
+                
+                const energyCharge = kwh * (1.5 + (year - 2013) * 0.15); 
+                const serviceCharge = 2000 + (year - 2013) * 100;
+                const networkCharge = 1500 + (year - 2013) * 80;
+                const networkSurcharge = networkCharge * 0.1;
+                const sundryCharges = Math.random() > 0.8 ? 500 : 0; 
+                const miscCharges = Math.random() > 0.9 ? 200 : 0;
+                const subTotalElec = energyCharge + serviceCharge + networkCharge + networkSurcharge + sundryCharges + miscCharges;
+                const vatElec = subTotalElec * 0.15;
+
+                const klBase = 1200 + (year - 2013) * 50;
+                const kl = Math.floor(klBase * (isSummer ? 1.3 : 1.0) + Math.random() * 200);
+
+                const waterCharge = kl * (15 + (year - 2013) * 2); 
+                const sewageCharge = kl * 0.7 * (10 + (year - 2013) * 1.5);
+                const dsml = 500 + (year - 2013) * 50; 
+                const sundryWater = Math.random() > 0.9 ? 300 : 0;
+                const miscWater = Math.random() > 0.95 ? 150 : 0;
+                const subTotalWater = waterCharge + sewageCharge + dsml + sundryWater + miscWater;
+                const vatWater = subTotalWater * 0.15;
+
+                return {
+                    month,
+                    learnerCount,
+                    electricity: {
+                    usage: kwh,
+                    breakdown: {
+                        'Energy Charge': energyCharge,
+                        'Service Charge': serviceCharge,
+                        'Network Charge': networkCharge,
+                        'Network Surcharge': networkSurcharge,
+                        'Sundry Charges': sundryCharges,
+                        'Miscellaneous Charges': miscCharges,
+                        'VAT': vatElec,
+                        'Total Cost': subTotalElec + vatElec
+                    }
+                    },
+                    water: {
+                    usage: kl,
+                    breakdown: {
+                        'Water Charge': waterCharge,
+                        'Sewage Charges': sewageCharge,
+                        'DSML': dsml,
+                        'Sundry Charges': sundryWater,
+                        'Miscellaneous Charges': miscWater,
+                        'VAT': vatWater,
+                        'Total Cost': subTotalWater + vatWater
+                    }
+                    }
+                };
+                });
+
+                data[year] = yearlyData;
+            });
+
+            return { years, data };
+        };
+
+        const { years: YEARS, data: MOCK_DATA } = generateData();
+
+        // --- Components ---
+
+        const KPICard = ({ title, value, subtext, icon: Icon, colorClass, isDark }) => (
+            <div className={`p-4 rounded-xl shadow-sm border transition-colors duration-300
+                ${isDark ? 'bg-gray-800 border-gray-700 text-white' : 'bg-white border-gray-200 text-gray-800'}`}>
+                <div className="flex justify-between items-start mb-2">
+                <div className={`p-2 rounded-lg ${colorClass} bg-opacity-10`}>
+                    <Icon className={`w-5 h-5 ${colorClass.replace('bg-', 'text-')}`} />
+                </div>
+                <span className={`text-xs font-medium px-2 py-1 rounded-full 
+                    ${isDark ? 'bg-gray-700 text-gray-300' : 'bg-gray-100 text-gray-600'}`}>
+                    Annual
+                </span>
+                </div>
+                <h3 className={`text-sm font-medium ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>{title}</h3>
+                <p className="text-2xl font-bold mt-1">{value}</p>
+                <p className={`text-xs mt-1 ${isDark ? 'text-gray-500' : 'text-gray-400'}`}>{subtext}</p>
+            </div>
+        );
+
+        const PIE_COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#6366f1', '#64748b'];
+
+        const CostBreakdownPie = ({ data, utilityType, isDark }) => {
+            const breakdownData = useMemo(() => {
+                const excludeKeys = ['Total Cost'];
+                const totals = {};
+                data.forEach(month => {
+                const breakdown = month[utilityType].breakdown;
+                Object.keys(breakdown).forEach(key => {
+                    if (!excludeKeys.includes(key)) {
+                    totals[key] = (totals[key] || 0) + breakdown[key];
+                    }
+                });
+                });
+
+                return Object.entries(totals)
+                .map(([name, value]) => ({ name, value }))
+                .filter(item => item.value > 0)
+                .sort((a, b) => b.value - a.value);
+            }, [data, utilityType]);
+
+            return (
+                <div className="flex flex-col items-center justify-center h-full w-full">
+                <div className="h-48 w-full">
+                    <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                        <Pie
+                        data={breakdownData}
+                        cx="50%"
+                        cy="50%"
+                        innerRadius={45}
+                        outerRadius={65}
+                        paddingAngle={5}
+                        dataKey="value"
+                        >
+                        {breakdownData.map((entry, index) => (
+                            <Cell key={`cell-${index}`} fill={PIE_COLORS[index % PIE_COLORS.length]} stroke={isDark ? '#1f2937' : '#fff'} />
+                        ))}
+                        </Pie>
+                        <Tooltip 
+                        formatter={(value) => `R ${value.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`}
+                        contentStyle={{ 
+                            backgroundColor: isDark ? '#1f2937' : '#fff', 
+                            borderColor: isDark ? '#374151' : '#e5e7eb',
+                            color: isDark ? '#fff' : '#000',
+                            borderRadius: '8px'
                         }}
-                      />
-                      <Bar 
-                        dataKey="Usage" 
-                        name={`${stats.unit} Consumption`} 
-                        fill={activeTab === 'electricity' ? "#f59e0b" : "#3b82f6"} 
-                        radius={[4, 4, 0, 0]}
-                      />
-                    </>
-                  ) : (
-                    <>
-                      <YAxis 
-                        orientation="left" 
-                        stroke="#10b981"
-                        tick={{ fill: isDarkMode ? "#d1d5db" : "#374151" }}
-                        tickFormatter={(val) => `R${val/1000}k`}
-                        label={{ 
-                          value: 'Rand (R)', 
-                          angle: -90, 
-                          position: 'insideLeft',
-                          style: { fill: "#10b981" }
-                        }}
-                      />
-                      <Bar 
-                        dataKey="Cost" 
-                        name="Cost (Rand)" 
-                        fill="#10b981" 
-                        radius={[4, 4, 0, 0]}
-                      />
-                    </>
-                  )}
+                        />
+                    </PieChart>
+                    </ResponsiveContainer>
+                </div>
+                <div className="w-full grid grid-cols-2 gap-x-2 gap-y-2 mt-1">
+                    {breakdownData.map((entry, index) => (
+                    <div key={index} className="flex items-center text-xs" title={entry.name}>
+                        <div 
+                        className="w-2.5 h-2.5 rounded-full mr-2 shrink-0" 
+                        style={{ backgroundColor: PIE_COLORS[index % PIE_COLORS.length] }}
+                        />
+                        <span className={`truncate ${isDark ? 'text-gray-300' : 'text-gray-600'}`}>
+                        {entry.name}
+                        </span>
+                    </div>
+                    ))}
+                </div>
+                </div>
+            );
+        };
 
-                  <Tooltip 
-                    contentStyle={{ 
-                      backgroundColor: isDarkMode ? '#1f2937' : '#fff', 
-                      borderColor: isDarkMode ? '#374151' : '#e5e7eb',
-                      color: isDarkMode ? '#fff' : '#000'
-                    }}
-                    formatter={(value, name) => [
-                      name === 'Cost (Rand)' ? `R ${value.toLocaleString()}` : `${value.toLocaleString()} ${stats.unit}`,
-                      name
-                    ]}
-                  />
-                  <Legend />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          </div>
+        const MunicipalChargesApp = () => {
+            const [activeTab, setActiveTab] = useState('electricity');
+            const [selectedYear, setSelectedYear] = useState(2025);
+            const [chartMetric, setChartMetric] = useState('usage'); 
+            const [isDarkMode, setIsDarkMode] = useState(false);
 
-          {/* --- Pie Chart Section (1/3 column) --- */}
-          <div className={`col-span-1 p-6 rounded-xl border shadow-sm flex flex-col ${isDarkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'}`}>
-            <div className="mb-4">
-              <h2 className={`text-lg font-bold ${isDarkMode ? 'text-white' : 'text-gray-800'}`}>
-                Cost Distribution
-              </h2>
-              <p className={`text-sm ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-                Annual breakdown
-              </p>
-            </div>
-            <div className="flex-1 flex items-center justify-center">
-              <CostBreakdownPie 
-                data={currentData} 
-                utilityType={activeTab} 
-                isDark={isDarkMode} 
-              />
-            </div>
-          </div>
+            const currentData = MOCK_DATA[selectedYear] || [];
+            
+            const stats = useMemo(() => {
+                let totalCost = 0;
+                let totalUsage = 0;
+                let learnerCountAvg = 0;
 
-        </div>
+                currentData.forEach(m => {
+                totalCost += m[activeTab].breakdown['Total Cost'];
+                totalUsage += m[activeTab].usage;
+                learnerCountAvg += m.learnerCount;
+                });
 
-      </main>
-    </div>
-  );
-}
+                learnerCountAvg = learnerCountAvg / 12;
+
+                const unit = activeTab === 'electricity' ? 'kWh' : 'KL';
+                const effectiveCost = totalUsage > 0 ? (totalCost / totalUsage) : 0;
+                const perLearner = learnerCountAvg > 0 ? (totalUsage / learnerCountAvg) : 0;
+
+                return {
+                totalCost,
+                totalUsage,
+                effectiveCost,
+                perLearner,
+                unit,
+                learnerCountAvg
+                };
+            }, [currentData, activeTab]);
+
+            const chartData = currentData.map(d => ({
+                name: d.month,
+                Usage: d[activeTab].usage,
+                Cost: d[activeTab].breakdown['Total Cost']
+            }));
+
+            const formatCurrency = (val) => `R ${val.toLocaleString()}`;
+
+            return (
+                <div className={`min-h-screen transition-colors duration-300 font-sans 
+                ${isDarkMode ? 'bg-gray-900 text-gray-100' : 'bg-slate-50 text-slate-900'}`}>
+                
+                <nav className={`px-6 py-4 shadow-sm sticky top-0 z-10 backdrop-blur-md border-b
+                    ${isDarkMode ? 'bg-gray-900/90 border-gray-800' : 'bg-white/90 border-gray-200'}`}>
+                    <div className="max-w-7xl mx-auto flex justify-between items-center">
+                    <div className="flex items-center space-x-3">
+                        <div className="p-2 bg-blue-600 rounded-lg shadow-lg shadow-blue-500/30">
+                        <Activity className="w-6 h-6 text-white" />
+                        </div>
+                        <div>
+                        <h1 className="text-xl font-bold tracking-tight">Municipal Charges</h1>
+                        <p className={`text-xs ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                            Financial Overview & Utility Analytics
+                        </p>
+                        </div>
+                    </div>
+                    
+                    <button 
+                        onClick={() => setIsDarkMode(!isDarkMode)}
+                        className={`p-2 rounded-full transition-all duration-300 focus:outline-none focus:ring-2 focus:ring-offset-2
+                        ${isDarkMode 
+                            ? 'bg-gray-800 text-yellow-400 hover:bg-gray-700 focus:ring-yellow-400' 
+                            : 'bg-gray-100 text-slate-600 hover:bg-gray-200 focus:ring-slate-400'}`}
+                    >
+                        {isDarkMode ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
+                    </button>
+                    </div>
+                </nav>
+
+                <main className="max-w-7xl mx-auto p-6 space-y-6">
+                    
+                    <div className={`flex flex-col lg:flex-row items-start lg:items-center`}>
+                    
+                    <div className={`flex p-1 space-x-1 rounded-lg shrink-0 ${isDarkMode ? 'bg-gray-800' : 'bg-white border border-gray-200'}`}>
+                        <button
+                        onClick={() => setActiveTab('electricity')}
+                        className={`flex items-center px-4 py-2 rounded-md text-sm font-medium transition-all
+                            ${activeTab === 'electricity' 
+                            ? 'bg-amber-500 text-white shadow-md' 
+                            : (isDarkMode ? 'text-gray-400 hover:text-gray-200' : 'text-gray-500 hover:text-gray-900')}`}
+                        >
+                        <Zap className="w-4 h-4 mr-2" /> Electricity
+                        </button>
+                        <button
+                        onClick={() => setActiveTab('water')}
+                        className={`flex items-center px-4 py-2 rounded-md text-sm font-medium transition-all
+                            ${activeTab === 'water' 
+                            ? 'bg-blue-500 text-white shadow-md' 
+                            : (isDarkMode ? 'text-gray-400 hover:text-gray-200' : 'text-gray-500 hover:text-gray-900')}`}
+                        >
+                        <Droplets className="w-4 h-4 mr-2" /> Water
+                        </button>
+                    </div>
+
+                    <div className="flex-1 w-full lg:w-auto overflow-hidden relative group ml-0 lg:ml-6 mt-4 lg:mt-0">
+                        <div className="absolute left-0 top-0 bottom-0 w-6 bg-gradient-to-r from-current to-transparent opacity-0 pointer-events-none z-10" />
+                        <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-hide mask-image-gradient">
+                            {YEARS.map(year => (
+                            <button
+                                key={year}
+                                onClick={() => setSelectedYear(year)}
+                                className={`px-3 py-1.5 rounded-md text-xs font-medium whitespace-nowrap transition-all border shrink-0
+                                ${selectedYear === year
+                                    ? (isDarkMode 
+                                        ? 'bg-indigo-600 border-indigo-500 text-white' 
+                                        : 'bg-indigo-600 border-indigo-600 text-white shadow-md')
+                                    : (isDarkMode
+                                        ? 'bg-gray-800 border-gray-700 text-gray-400 hover:bg-gray-700'
+                                        : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50')
+                                }`}
+                            >
+                                {year}
+                            </button>
+                            ))}
+                        </div>
+                        <div className="absolute right-0 top-0 bottom-0 w-6 bg-gradient-to-l from-current to-transparent opacity-0 pointer-events-none z-10" />
+                    </div>
+
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                    <KPICard 
+                        title="Total Cost" 
+                        value={formatCurrency(stats.totalCost)}
+                        subtext={`For ${selectedYear}`}
+                        icon={DollarSign}
+                        colorClass="bg-emerald-500"
+                        isDark={isDarkMode}
+                    />
+                    <KPICard 
+                        title="Total Consumption" 
+                        value={`${stats.totalUsage.toLocaleString()} ${stats.unit}`}
+                        subtext={`For ${selectedYear}`}
+                        icon={activeTab === 'electricity' ? Zap : Droplets}
+                        colorClass={activeTab === 'electricity' ? 'bg-amber-500' : 'bg-blue-500'}
+                        isDark={isDarkMode}
+                    />
+                    <KPICard 
+                        title={`Annual Effective ${stats.unit} Cost`}
+                        value={`R ${stats.effectiveCost.toFixed(2)}`}
+                        subtext={`Per ${stats.unit}`}
+                        icon={TrendingUp}
+                        colorClass="bg-purple-500"
+                        isDark={isDarkMode}
+                    />
+                    <KPICard 
+                        title={`${stats.unit} Per Learner`} 
+                        value={`${stats.perLearner.toFixed(2)} ${stats.unit}`}
+                        subtext={`Avg Learners: ${Math.round(stats.learnerCountAvg)}`}
+                        icon={Users}
+                        colorClass="bg-pink-500"
+                        isDark={isDarkMode}
+                    />
+                    </div>
+
+                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                    
+                    <div className={`col-span-1 lg:col-span-2 p-6 rounded-xl border shadow-sm ${isDarkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'}`}>
+                        <div className="flex flex-wrap items-center justify-between mb-6 gap-4">
+                        <div>
+                            <h2 className={`text-lg font-bold ${isDarkMode ? 'text-white' : 'text-gray-800'}`}>
+                            Monthly Trends: {selectedYear}
+                            </h2>
+                            <p className={`text-sm ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                            Comparison
+                            </p>
+                        </div>
+
+                        <div className={`flex items-center space-x-2 p-1 rounded-lg ${isDarkMode ? 'bg-gray-900' : 'bg-gray-100'}`}>
+                            <button 
+                            onClick={() => setChartMetric('usage')}
+                            className={`flex items-center space-x-2 px-3 py-1.5 rounded-md text-sm transition-all
+                                ${chartMetric === 'usage' 
+                                ? (activeTab === 'electricity' ? 'bg-amber-500 text-white shadow-sm' : 'bg-blue-500 text-white shadow-sm') 
+                                : (isDarkMode ? 'text-gray-400 hover:bg-gray-800' : 'text-gray-500 hover:bg-gray-200')
+                                }`}
+                            >
+                            {activeTab === 'electricity' ? <Zap className="w-4 h-4" /> : <Droplets className="w-4 h-4" />}
+                            <span>{activeTab === 'electricity' ? 'kWh' : 'KL'}</span>
+                            {chartMetric === 'usage' && <Check className="w-3 h-3 ml-1" />}
+                            </button>
+
+                            <button 
+                            onClick={() => setChartMetric('cost')}
+                            className={`flex items-center space-x-2 px-3 py-1.5 rounded-md text-sm transition-all
+                                ${chartMetric === 'cost' 
+                                ? 'bg-emerald-500 text-white shadow-sm' 
+                                : (isDarkMode ? 'text-gray-400 hover:bg-gray-800' : 'text-gray-500 hover:bg-gray-200')
+                                }`}
+                            >
+                            <DollarSign className="w-4 h-4" />
+                            <span>Rand</span>
+                            {chartMetric === 'cost' && <Check className="w-3 h-3 ml-1" />}
+                            </button>
+                        </div>
+                        </div>
+                        
+                        <div className="h-80 w-full">
+                        <ResponsiveContainer width="100%" height="100%">
+                            <BarChart data={chartData} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
+                            <CartesianGrid strokeDasharray="3 3" stroke={isDarkMode ? "#374151" : "#e5e7eb"} />
+                            <XAxis 
+                                dataKey="name" 
+                                stroke={isDarkMode ? "#9ca3af" : "#4b5563"} 
+                                tick={{ fill: isDarkMode ? "#9ca3af" : "#4b5563" }}
+                            />
+                            
+                            {chartMetric === 'usage' ? (
+                                <>
+                                <YAxis 
+                                    orientation="left" 
+                                    stroke={activeTab === 'electricity' ? "#f59e0b" : "#3b82f6"}
+                                    tick={{ fill: isDarkMode ? "#d1d5db" : "#374151" }}
+                                    label={{ 
+                                    value: stats.unit, 
+                                    angle: -90, 
+                                    position: 'insideLeft',
+                                    style: { fill: activeTab === 'electricity' ? "#f59e0b" : "#3b82f6" }
+                                    }}
+                                />
+                                <Bar 
+                                    dataKey="Usage" 
+                                    name={`${stats.unit} Consumption`} 
+                                    fill={activeTab === 'electricity' ? "#f59e0b" : "#3b82f6"} 
+                                    radius={[4, 4, 0, 0]}
+                                />
+                                </>
+                            ) : (
+                                <>
+                                <YAxis 
+                                    orientation="left" 
+                                    stroke="#10b981"
+                                    tick={{ fill: isDarkMode ? "#d1d5db" : "#374151" }}
+                                    tickFormatter={(val) => `R${val/1000}k`}
+                                    label={{ 
+                                    value: 'Rand (R)', 
+                                    angle: -90, 
+                                    position: 'insideLeft',
+                                    style: { fill: "#10b981" }
+                                    }}
+                                />
+                                <Bar 
+                                    dataKey="Cost" 
+                                    name="Cost (Rand)" 
+                                    fill="#10b981" 
+                                    radius={[4, 4, 0, 0]}
+                                />
+                                </>
+                            )}
+
+                            <Tooltip 
+                                contentStyle={{ 
+                                backgroundColor: isDarkMode ? '#1f2937' : '#fff', 
+                                borderColor: isDarkMode ? '#374151' : '#e5e7eb',
+                                color: isDarkMode ? '#fff' : '#000'
+                                }}
+                                formatter={(value, name) => [
+                                name === 'Cost (Rand)' ? `R ${value.toLocaleString()}` : `${value.toLocaleString()} ${stats.unit}`,
+                                name
+                                ]}
+                            />
+                            <Legend />
+                            </BarChart>
+                        </ResponsiveContainer>
+                        </div>
+                    </div>
+
+                    <div className={`col-span-1 p-6 rounded-xl border shadow-sm flex flex-col ${isDarkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'}`}>
+                        <div className="mb-4">
+                        <h2 className={`text-lg font-bold ${isDarkMode ? 'text-white' : 'text-gray-800'}`}>
+                            Cost Distribution
+                        </h2>
+                        <p className={`text-sm ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                            Annual breakdown
+                        </p>
+                        </div>
+                        <div className="flex-1 flex items-center justify-center">
+                        <CostBreakdownPie 
+                            data={currentData} 
+                            utilityType={activeTab} 
+                            isDark={isDarkMode} 
+                        />
+                        </div>
+                    </div>
+
+                    </div>
+
+                </main>
+                </div>
+            );
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<MunicipalChargesApp />);
+    </script>
+</body>
+</html>
