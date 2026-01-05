@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Municipal Charges Dashboard</title> 
+    <title>Municipal Charges Dashboard</title>
     
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
@@ -54,6 +54,30 @@
         const { 
             BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell 
         } = window.Recharts; // Access from window explicitly
+
+        // --- Helper for Safe Markdown Parsing ---
+        const parseMarkdown = (text) => {
+            if (!text) return '';
+            try {
+                // Check specifically for window.marked
+                if (window.marked) {
+                    // Newer versions use marked.parse
+                    if (typeof window.marked.parse === 'function') {
+                        return window.marked.parse(text);
+                    }
+                    // Older versions might be a function directly
+                    if (typeof window.marked === 'function') {
+                        return window.marked(text);
+                    }
+                }
+                // Fallback: return simple text wrapped in paragraph if parser missing
+                console.warn('Marked library not found or invalid, returning raw text');
+                return `<p>${text}</p>`;
+            } catch (e) {
+                console.error('Markdown parsing error:', e);
+                return `<p>${text}</p>`;
+            }
+        };
 
         // --- Icons (Inline SVGs) ---
         const Icon = ({ children, className }) => (
@@ -553,7 +577,7 @@
                             </div>
                             
                             <div className={`prose prose-sm max-w-none ${isDarkMode ? 'prose-invert text-gray-300' : 'text-gray-700'}`}
-                                 dangerouslySetInnerHTML={{ __html: marked.parse(insight) }} 
+                                 dangerouslySetInnerHTML={{ __html: parseMarkdown(insight) }} 
                             />
                         </div>
                     )}
