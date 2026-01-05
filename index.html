@@ -463,7 +463,13 @@
                 setIsAudioLoading(true);
 
                 // --- VERCEL / LOCAL DEPLOYMENT CONFIGURATION ---
-                const apiKey = "AIzaSyAlYISg9G2JlazBPiPUhZo4KjQv7SU1ReM"; 
+                // [STEP 1]: PASTE YOUR GOOGLE GEMINI API KEY BELOW inside the quotes
+                const apiKey = "AIzaSyCkXrVGJ3nQfIDLGlOMDidERJayH68FVy8"; 
+                
+                // [STEP 2]: Model Selection
+                // Use "gemini-1.5-flash" if you are using your own standard API key.
+                // Use "gemini-2.5-flash-preview-tts" if you have access to the preview audio model.
+                // Note: Standard keys may not support the TTS preview model yet.
                 const modelName = "gemini-2.5-flash-preview-tts";
 
                 // Clean text for speech (remove markdown symbols that might sound weird)
@@ -531,7 +537,12 @@
                 setIsAnalyzing(true);
                 setInsight(null);
 
-                const apiKey = ""; 
+                // --- VERCEL / LOCAL DEPLOYMENT CONFIGURATION ---
+                // [STEP 1]: PASTE YOUR GOOGLE GEMINI API KEY BELOW inside the quotes
+                const apiKey = "AIzaSyCkXrVGJ3nQfIDLGlOMDidERJayH68FVy8"; 
+                
+                // [STEP 2]: Model Selection
+                // Use "gemini-1.5-flash" if you are using your own standard API key.
                 const modelName = "gemini-2.5-flash-preview-09-2025";
                 
                 const monthlySummary = currentData.map(d => ({
