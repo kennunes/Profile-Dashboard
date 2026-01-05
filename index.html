@@ -21,6 +21,9 @@
     <!-- Babel -->
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 
+    <!-- Markdown Parser (for AI responses) -->
+    <script src="https://unpkg.com/marked/marked.min.js"></script>
+
     <style>
         /* Custom scrollbar hiding for the year selector */
         .scrollbar-hide::-webkit-scrollbar {
@@ -35,6 +38,11 @@
             mask-image: linear-gradient(to right, transparent, black 10%, black 90%, transparent);
             -webkit-mask-image: linear-gradient(to right, transparent, black 10%, black 90%, transparent);
         }
+        /* Markdown Styles */
+        .prose h3 { font-size: 1.1em; font-weight: 700; margin-bottom: 0.5em; }
+        .prose ul { list-style-type: disc; padding-left: 1.5em; margin-bottom: 0.5em; }
+        .prose p { margin-bottom: 0.5em; }
+        .prose strong { font-weight: 600; }
     </style>
 </head>
 <body>
@@ -116,6 +124,18 @@
         const Check = ({ className }) => (
             <Icon className={className}>
                 <path d="M20 6 9 17l-5-5"/>
+            </Icon>
+        );
+
+        const Sparkles = ({ className }) => (
+            <Icon className={className}>
+                <path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/>
+            </Icon>
+        );
+
+        const X = ({ className }) => (
+            <Icon className={className}>
+                <path d="M18 6 6 18"/><path d="m6 6 12 12"/>
             </Icon>
         );
 
@@ -288,6 +308,10 @@
             const [selectedYear, setSelectedYear] = useState(2025);
             const [chartMetric, setChartMetric] = useState('usage'); 
             const [isDarkMode, setIsDarkMode] = useState(false);
+            
+            // AI State
+            const [insight, setInsight] = useState(null);
+            const [isAnalyzing, setIsAnalyzing] = useState(false);
 
             const currentData = MOCK_DATA[selectedYear] || [];
             
@@ -326,6 +350,69 @@
 
             const formatCurrency = (val) => `R ${val.toLocaleString()}`;
 
+            // --- AI Analysis Logic ---
+            const generateInsights = async () => {
+                setIsAnalyzing(true);
+                setInsight(null);
+
+                const apiKey = ""; // API Key provided by environment
+                
+                // Prepare simple data summary for the prompt
+                const monthlySummary = currentData.map(d => ({
+                    month: d.month,
+                    usage: d[activeTab].usage,
+                    cost: d[activeTab].breakdown['Total Cost']
+                }));
+                
+                const prompt = `
+                    You are a financial analyst for a school. Analyze the following ${activeTab} data for the year ${selectedYear}.
+                    
+                    Annual Summary:
+                    - Total Cost: R${stats.totalCost.toFixed(2)}
+                    - Total Consumption: ${stats.totalUsage} ${stats.unit}
+                    - Cost per Unit: R${stats.effectiveCost.toFixed(2)} / ${stats.unit}
+                    - Usage per Learner: ${stats.perLearner.toFixed(2)} ${stats.unit}
+                    
+                    Monthly Data (JSON):
+                    ${JSON.stringify(monthlySummary)}
+                    
+                    Please provide a concise analysis in markdown format including:
+                    1. **Key Trends**: Identify peak consumption months and any seasonal patterns.
+                    2. **Anomalies**: Point out any unusual spikes in cost or usage.
+                    3. **Recommendations**: Give 2-3 specific actionable tips to reduce costs based on this data.
+                    
+                    Keep the tone professional yet accessible. Do not output JSON, just Markdown.
+                `;
+
+                try {
+                    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({
+                            contents: [{
+                                parts: [{ text: prompt }]
+                            }]
+                        })
+                    });
+
+                    if (!response.ok) {
+                        throw new Error(`API Error: ${response.status}`);
+                    }
+
+                    const data = await response.json();
+                    const text = data.candidates?.[0]?.content?.parts?.[0]?.text || "No analysis could be generated.";
+                    setInsight(text);
+
+                } catch (error) {
+                    console.error("Analysis failed:", error);
+                    setInsight("Sorry, we couldn't generate an analysis at this time. Please try again later.");
+                } finally {
+                    setIsAnalyzing(false);
+                }
+            };
+
             return (
                 <div className={`min-h-screen transition-colors duration-300 font-sans 
                 ${isDarkMode ? 'bg-gray-900 text-gray-100' : 'bg-slate-50 text-slate-900'}`}>
@@ -359,7 +446,7 @@
 
                 <main className="max-w-7xl mx-auto p-6 space-y-6">
                     
-                    <div className={`flex flex-col lg:flex-row items-start lg:items-center`}>
+                    <div className={`flex flex-col lg:flex-row items-start lg:items-center gap-4`}>
                     
                     <div className={`flex p-1 space-x-1 rounded-lg shrink-0 ${isDarkMode ? 'bg-gray-800' : 'bg-white border border-gray-200'}`}>
                         <button
@@ -382,13 +469,13 @@
                         </button>
                     </div>
 
-                    <div className="flex-1 w-full lg:w-auto overflow-hidden relative group ml-0 lg:ml-6 mt-4 lg:mt-0">
+                    <div className="flex-1 w-full lg:w-auto overflow-hidden relative group">
                         <div className="absolute left-0 top-0 bottom-0 w-6 bg-gradient-to-r from-current to-transparent opacity-0 pointer-events-none z-10" />
                         <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-hide mask-image-gradient">
                             {YEARS.map(year => (
                             <button
                                 key={year}
-                                onClick={() => setSelectedYear(year)}
+                                onClick={() => { setSelectedYear(year); setInsight(null); }}
                                 className={`px-3 py-1.5 rounded-md text-xs font-medium whitespace-nowrap transition-all border shrink-0
                                 ${selectedYear === year
                                     ? (isDarkMode 
@@ -406,7 +493,64 @@
                         <div className="absolute right-0 top-0 bottom-0 w-6 bg-gradient-to-l from-current to-transparent opacity-0 pointer-events-none z-10" />
                     </div>
 
+                    {/* AI Analyze Button */}
+                    <button
+                        onClick={generateInsights}
+                        disabled={isAnalyzing}
+                        className={`flex items-center px-4 py-2 rounded-lg font-medium shadow-md transition-all
+                        ${isAnalyzing 
+                            ? 'bg-purple-400 cursor-not-allowed text-white'
+                            : 'bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white transform hover:scale-105 active:scale-95'
+                        }`}
+                    >
+                        {isAnalyzing ? (
+                            <>
+                                <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent mr-2"></div>
+                                Analyzing...
+                            </>
+                        ) : (
+                            <>
+                                <Sparkles className="w-4 h-4 mr-2" />
+                                AI Analyze ✨
+                            </>
+                        )}
+                    </button>
+
                     </div>
+                    
+                    {/* Insight Card (Conditionally Rendered) */}
+                    {insight && (
+                        <div className={`p-6 rounded-xl border shadow-lg relative animate-fade-in
+                            ${isDarkMode ? 'bg-gray-800 border-purple-500/30' : 'bg-white border-purple-200'}
+                        `}>
+                            <button 
+                                onClick={() => setInsight(null)}
+                                className={`absolute top-4 right-4 p-1 rounded-full transition-colors
+                                    ${isDarkMode ? 'hover:bg-gray-700 text-gray-400' : 'hover:bg-gray-100 text-gray-500'}
+                                `}
+                            >
+                                <X className="w-5 h-5" />
+                            </button>
+                            
+                            <div className="flex items-center mb-4">
+                                <div className="p-2 bg-purple-100 rounded-lg mr-3">
+                                    <Sparkles className="w-5 h-5 text-purple-600" />
+                                </div>
+                                <div>
+                                    <h3 className={`font-bold ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>
+                                        AI Insights for {selectedYear}
+                                    </h3>
+                                    <p className={`text-xs ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                                        Generated by Gemini
+                                    </p>
+                                </div>
+                            </div>
+                            
+                            <div className={`prose prose-sm max-w-none ${isDarkMode ? 'prose-invert text-gray-300' : 'text-gray-700'}`}
+                                 dangerouslySetInnerHTML={{ __html: marked.parse(insight) }} 
+                            />
+                        </div>
+                    )}
 
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                     <KPICard 
