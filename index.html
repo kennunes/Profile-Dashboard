@@ -152,15 +152,15 @@ const CostBreakdownPie = ({ data, utilityType, isDark }) => {
 
   return (
     <div className="flex flex-col items-center justify-center h-full w-full">
-      <div className="h-64 w-full">
+      <div className="h-56 w-full"> {/* Slightly smaller height for the pie */}
         <ResponsiveContainer width="100%" height="100%">
           <PieChart>
             <Pie
               data={breakdownData}
               cx="50%"
               cy="50%"
-              innerRadius={60}
-              outerRadius={80}
+              innerRadius={50}
+              outerRadius={70}
               paddingAngle={5}
               dataKey="value"
             >
@@ -180,14 +180,15 @@ const CostBreakdownPie = ({ data, utilityType, isDark }) => {
           </PieChart>
         </ResponsiveContainer>
       </div>
-      <div className="w-full flex flex-col justify-center space-y-2 mt-4">
+      {/* Changed to a 2-column grid to compact the list */}
+      <div className="w-full grid grid-cols-2 gap-x-2 gap-y-1 mt-2">
         {breakdownData.map((entry, index) => (
-          <div key={index} className="flex items-center text-sm">
+          <div key={index} className="flex items-center text-xs">
             <div 
-              className="w-3 h-3 rounded-full mr-2 shrink-0" 
+              className="w-2.5 h-2.5 rounded-full mr-2 shrink-0" 
               style={{ backgroundColor: PIE_COLORS[index % PIE_COLORS.length] }}
             />
-            <span className={isDark ? 'text-gray-300' : 'text-gray-600'}>{entry.name}</span>
+            <span className={`truncate ${isDark ? 'text-gray-300' : 'text-gray-600'}`}>{entry.name}</span>
           </div>
         ))}
       </div>
